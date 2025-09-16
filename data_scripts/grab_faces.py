@@ -1,3 +1,4 @@
+# harvest_faces.py  (your second script, modified)
 import os
 import argparse
 from pathlib import Path
@@ -5,9 +6,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+# --- add: import our YOLOv5-Face helper (adjust path if needed) ---
+import sys
+YV5_DIR = Path(__file__).resolve().parents[0] / "yolov5-face"  # adjust if needed
+sys.path.append(str(YV5_DIR))
+from y5face_api import init_detector, detect_faces_bgr
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
-
 
 def list_images(in_dir: Path):
     return sorted([p for p in in_dir.iterdir() if p.suffix.lower() in IMG_EXTS])
@@ -29,70 +34,54 @@ def nearest_box_center(pt, boxes):
     return int(np.argmin(d2))
 
 def choose_face_via_click(img_bgr, boxes):
-    """Show image with boxes; return index of chosen face via mouse click."""
     chosen = {"pt": None}
     display = img_bgr.copy()
-
-    # Draw boxes with indices
     for i, (x, y, w, h) in enumerate(boxes):
         cv2.rectangle(display, (x, y), (x+w, y+h), (0, 255, 0), 2)
         cv2.putText(display, f"{i}", (x, max(0, y-5)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
-
     win = "Pick a face (click inside a box). Press ESC to skip."
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-
     def on_mouse(event, mx, my, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
             chosen["pt"] = (mx, my)
-
     cv2.setMouseCallback(win, on_mouse)
-
     while True:
         cv2.imshow(win, display)
         key = cv2.waitKey(20) & 0xFF
         if chosen["pt"] is not None:
             pt = chosen["pt"]
-            # Prefer click inside a bounding box
             idx = None
             for i, b in enumerate(boxes):
                 if point_in_box(pt, b):
-                    idx = i
-                    break
+                    idx = i; break
             if idx is None:
                 idx = nearest_box_center(pt, boxes)
             cv2.destroyWindow(win)
             return idx
-        if key == 27:  # ESC to skip this image
+        if key == 27:
             cv2.destroyWindow(win)
             return None
-        
+
 def expand_box(x, y, w, h, W, H, scale=1.8, top_boost=0.25):
-    """
-    Turn a face box into a 'head' box.
-    - scale: overall box growth (1.0 = no growth). Try 1.6–2.0.
-    - top_boost: push box upward (fraction of new height) to include hair.
-    """
     cx = x + w / 2.0
     cy = y + h / 2.0
-
     new_size = int(scale * max(w, h))
     nx = int(cx - new_size / 2)
     ny = int(cy - new_size / 2)
-
-    # lift the box up a bit to include hair/forehead
     ny = ny - int(top_boost * new_size)
-
-    # clamp to image bounds
-    nx = max(0, nx)
-    ny = max(0, ny)
+    nx = max(0, nx); ny = max(0, ny)
     new_size = min(new_size, W - nx, H - ny)
-
     return nx, ny, new_size, new_size
 
 def main():
     parser = argparse.ArgumentParser(description="Sweep a directory for faces and save chosen crops.")
-    parser.add_argument("--input_dir", type=Path, help="Directory of images")
+    parser.add_argument("--input_dir", type=Path, required=True, help="Directory of images")
+    parser.add_argument("--weights", type=Path, default=YV5_DIR / "weights" / "yolov5s-face.pt",
+                        help="Path to YOLOv5-Face .pt weights")
+    parser.add_argument("--device", type=str, default="0", help="CUDA device id (e.g., '0') or 'cpu'")
+    parser.add_argument("--conf", type=float, default=0.35, help="Confidence threshold")
+    parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold")
     args = parser.parse_args()
 
     in_dir = args.input_dir.resolve()
@@ -102,11 +91,8 @@ def main():
     out_dir = Path(f"{in_dir.name}_faces")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # OpenCV Haar cascade (bundled with cv2)
-    cascade_path = os.path.join("face_weights", "haarcascade_frontalface_default.xml")
-    face_cascade = cv2.CascadeClassifier(cascade_path)
-    if face_cascade.empty():
-        raise SystemExit(f"Failed to load cascade at {cascade_path}")
+    # --- init YOLOv5-Face detector once ---
+    init_detector(str(args.weights), device=args.device, imgsz=640, conf_thres=args.conf, iou_thres=args.iou)
 
     images = list_images(in_dir)
     if not images:
@@ -119,22 +105,14 @@ def main():
             print(f"[Skip] Could not read: {img_path.name}")
             continue
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        H, W = img.shape[:2]
 
-        # Tune these if needed
-        boxes = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(40, 40),
-            flags=cv2.CASCADE_SCALE_IMAGE,
-        )
+        # --- swap-in: YOLOv5-Face detections (x,y,w,h) ---
+        boxes = detect_faces_bgr(img)
 
         if len(boxes) == 0:
             print(f"[0 faces] Skip: {img_path.name}")
             continue
-
-        H, W = img.shape[:2]
 
         if len(boxes) == 1:
             x, y, w, h = boxes[0]
@@ -161,7 +139,5 @@ def main():
 
     print(f"Done. Crops in: {out_dir}")
 
-
 if __name__ == "__main__":
-
     main()
