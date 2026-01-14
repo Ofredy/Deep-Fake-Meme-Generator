@@ -1,3 +1,9 @@
 [submodule "audio_gen/audio"]
 	path = audio_gen/audio
 	url = https://github.com/notiesu/audio-mask-synthesizer
+[submodule "image_gen/SynDiff"]
+	path = image_gen/SynDiff
+	url = git@github.com:Ofredy/SynDiff.git
+[submodule "image_gen/first-order-model"]
+	path = image_gen/first-order-model
+	url = git@github.com:AliaksandrSiarohin/first-order-model.git
