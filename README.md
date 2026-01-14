@@ -35,7 +35,7 @@ Instead of hiding it — I embraced it.
 
 ## 📁 Repository Structure
 
-├── audio_gen/ # Audio generation code (from Iesu Agapito) '=
+├── audio_gen/ # Audio generation code (from Iesu Agapito) 
 ├── image_gen/ # Image generation attempt (mostly broken) 
 ├── .gitignore 
 ├── LICENSE 
