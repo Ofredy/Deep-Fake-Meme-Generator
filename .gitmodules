@@ -1,0 +1,3 @@
+[submodule "audio_gen/audio"]
+	path = audio_gen/audio
+	url = https://github.com/notiesu/audio-mask-synthesizer
